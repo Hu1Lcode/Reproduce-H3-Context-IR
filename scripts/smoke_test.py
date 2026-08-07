@@ -234,6 +234,9 @@ check("字段顺序错误被检测", any("顺序" in i.message for i in r.issues
 fixed = auto_fix("[Shot 1] At 00:00.000, start.\n[Shot 2] At 00:03.5, next.", "t2va", 10.0)
 check("auto_fix 去除 [Shot 1] 时间戳", fixed.startswith("[Shot 1] start."), fixed)
 check("auto_fix 时间戳补零", "At 00:03.500" in fixed, fixed)
+# auto_fix：3 位小数不应被误改成 4 位（回归）
+fixed3 = auto_fix("[Shot 2] At 00:03.000, y.\n[Shot 3] At 00:06.000, z.", "t2va", 10.0)
+check("auto_fix 3 位小数保持 3 位", "0000" not in fixed3 and "At 00:03.000" in fixed3, fixed3)
 
 # ---------------------------------------------------------------------------
 print(f"\n===== 结果: {PASS} 通过 / {FAIL} 失败 =====")

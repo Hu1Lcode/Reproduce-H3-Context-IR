@@ -249,7 +249,7 @@ def auto_fix(prompt: str, task_type: str, duration: float | None = None) -> str:
         fixed,
     )
     fixed = re.sub(
-        r"\[Shot (\d+)\] At (\d{2}):(\d{2})\.(\d{1,2})",
+        r"\[Shot (\d+)\] At (\d{2}):(\d{2})\.(\d{1,2})(?!\d)",
         lambda mm: f"[Shot {mm.group(1)}] At {mm.group(2)}:{mm.group(3)}.{mm.group(4).ljust(3, '0')}",
         fixed,
     )
