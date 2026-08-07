@@ -56,37 +56,198 @@ models:
 | `H3C_LLM_POLISH=1` | 开启 Step 5 LLM 润色（默认确定性拼接） |
 | `H3C_CACHE=0` | 关闭磁盘缓存 |
 
-## 使用
+## 一、启动服务
+
+### 1.1 前置条件
 
 ```bash
-# 端到端运行（T2VA 示例）
+# 1. 安装依赖（容器内已有 fastapi/uvicorn/openai 时可跳过）
+pip install -r requirements.txt
+
+# 2. 检查 config/config.yaml 中的模型端点是否正确
+#    （默认指向本地 vllm-omni-021 容器：qwen3.6 → :8111，qwen3-omni → :8112）
+#    云端 API 则在对应 provider 配 api_key
+
+# 3. 确认本地推理服务已就绪
+curl http://127.0.0.1:8111/v1/models   # qwen3.6
+curl http://127.0.0.1:8112/v1/models   # qwen3-omni
+```
+
+### 1.2 一键脚本启动（推荐）
+
+```bash
+./scripts/start_server.sh start       # 后台启动（默认端口 8888，读 config.yaml）
+./scripts/start_server.sh status      # 查看状态 + 健康检查
+./scripts/start_server.sh logs        # 实时跟随后台日志（Ctrl+C 退出查看，不影响服务）
+./scripts/start_server.sh foreground  # 前台启动，日志实时打印，Ctrl+C 停止服务
+./scripts/start_server.sh restart     # 重启（改完 config/config.yaml 后用它）
+./scripts/start_server.sh stop        # 停止（别名: kill / down / off）
+```
+
+- **宿主机 / 容器通用**：脚本会自动检测环境——在宿主机执行时自动 `docker exec` 转发到容器（默认 `vllm-omni-021`，可用环境变量 `H3C_CONTAINER` 覆盖）
+- **端口**：默认 8888，来自 `config/config.yaml` 的 `runtime.server_port`；临时覆盖用 `SERVER_PORT=9000 ./scripts/start_server.sh start`
+- **启动自检**：启动后自动等待 `/health` 就绪（最多 15 秒），失败会打印日志尾部
+
+### 1.3 手动启动（容器内）
+
+```bash
+cd /home/wjh/Reproduce-H3-Context-IR
+uvicorn server.server:app --host 0.0.0.0 --port 8888        # 前台
+nohup uvicorn server.server:app --host 0.0.0.0 --port 8888 > work/server.log 2>&1 &  # 后台
+```
+
+### 1.4 验证启动
+
+```bash
+curl http://127.0.0.1:8888/health
+# → {"status":"ok"}
+```
+
+---
+
+## 二、调用服务
+
+### 2.1 调用流程（两步：创建任务 → 轮询结果）
+
+服务采用**异步任务语义**（与官方 Context-IR API 一致）：
+
+```
+POST /v2/h3_context_ir                        → {"task_id": "..."}
+GET  /v2/query/video_generation/{task_id}     → 任务状态 + 最终 prompt
+```
+
+### 2.2 五种任务类型请求示例
+
+**T2VA（文生视频）**——只有文本：
+
+```bash
+curl -X POST http://127.0.0.1:8888/v2/h3_context_ir \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "MiniMax-H3",
+    "content": [{"type": "text", "text": "一只白猫在窗台上看雨，温馨的电影感画面"}],
+    "duration": 6,
+    "ratio": "16:9"
+  }'
+```
+
+**I2VA（首帧生视频）**——文本 + 1 张图（`role: first_frame`）：
+
+```bash
+curl -X POST http://127.0.0.1:8888/v2/h3_context_ir \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "MiniMax-H3",
+    "content": [
+      {"type": "text", "text": "基于这张首帧图，镜头缓慢推进，画面自然运动起来"},
+      {"type": "image_url", "url": "http://127.0.0.1:9080/ltx2.3-open.png", "role": "first_frame"}
+    ],
+    "duration": 6,
+    "ratio": "16:9"
+  }'
+```
+
+**L2VA（末帧生视频）**——文本 + 1 张图（`role: last_frame`）：
+
+```bash
+# 与 I2VA 相同结构，role 改为 "last_frame"
+```
+
+**FL2VA（首末帧生视频）**——文本 + 2 张图：
+
+```bash
+"content": [
+  {"type": "text", "text": "从第一帧演化到最后一帧的完整动作路径"},
+  {"type": "image_url", "url": ".../first.png", "role": "first_frame"},
+  {"type": "image_url", "url": ".../last.png",  "role": "last_frame"}
+]
+```
+
+**Ref2VA（全参考模式）**——文本 + 参考视频/音频/图（`role: reference_*`）：
+
+```bash
+curl -X POST http://127.0.0.1:8888/v2/h3_context_ir \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "MiniMax-H3",
+    "content": [
+      {"type": "text", "text": "参考视频中的角色在咖啡店里吃饼干"},
+      {"type": "video_url", "url": "http://127.0.0.1:9080/ref.mp4", "role": "reference_video"},
+      {"type": "audio_url", "url": "http://127.0.0.1:9080/voice.wav", "role": "reference_audio"}
+    ],
+    "duration": 5,
+    "ratio": "adaptive"
+  }'
+```
+
+### 2.3 查询结果（轮询）
+
+```bash
+TASK_ID=<上一步返回的 task_id>
+
+curl http://127.0.0.1:8888/v2/query/video_generation/$TASK_ID
+```
+
+```json
+{
+  "task_id": "4fa42c53-...",
+  "status": "success",
+  "content": {
+    "prompt": "For the target video, at 0.00 seconds...",   // ← 最终结构化 Prompt（Context-IR 输出）
+    "task_type": "i2va",
+    "validation": {"ok": true, "error_count": 0, "warning_count": 0, "issues": []}
+  },
+  "error": null
+}
+```
+
+**status 流转**：`pending` → `processing` → `success` / `failed`。任务一般耗时 1-3 分钟（5 个步骤 × 本地推理），建议每 10-15 秒轮询一次。结果同时落盘到 `work/tasks/{task_id}.json`。
+
+### 2.4 Python 调用示例
+
+```python
+import requests, time
+
+def call_context_ir(content, duration=6, ratio="16:9", base="http://127.0.0.1:8888"):
+    # 创建任务
+    r = requests.post(f"{base}/v2/h3_context_ir", json={
+        "model": "MiniMax-H3", "content": content, "duration": duration, "ratio": ratio,
+    })
+    task_id = r.json()["task_id"]
+    # 轮询
+    while True:
+        r = requests.get(f"{base}/v2/query/video_generation/{task_id}")
+        data = r.json()
+        if data["status"] != "processing":
+            break
+        time.sleep(15)
+    if data["status"] == "success":
+        return data["content"]["prompt"]
+    raise RuntimeError(data.get("error"))
+
+# T2VA 示例
+prompt = call_context_ir([{"type": "text", "text": "一只白猫在窗台上看雨"}])
+print(prompt)
+```
+
+### 2.5 注意事项
+
+1. **素材必须 URL 化**：`url` 字段必须是 vLLM 能访问的 HTTP 地址，不能用本地路径。
+   开发时可用内置静态服务（默认 9080 端口）暴露项目目录：
+   ```bash
+   python3 -m http.server 9080 --directory /home/wjh/Reproduce-H3-Context-IR --bind 0.0.0.0
+   # 然后 url 写 http://127.0.0.1:9080/ltx2.3-open.png
+   ```
+   生产环境请使用对象存储/CDN。
+2. **官方输入规格**会被校验（违规返回 400）：图像 ≤ 9、视频 ≤ 3、音频 ≤ 3、总文件 ≤ 12；视频/音频每段 2-15 秒；音频必须搭配图像或视频输入。
+3. **模型是思考型**（qwen3.6）：每个步骤会先"思考"再回答，单步延迟约 10-30 秒属正常；超长思考导致空输出时会自动重试。
+4. 服务默认端口 8888（`config/config.yaml` → `runtime.server_port`），改完用 `./scripts/start_server.sh restart` 生效。
+
+### 2.6 CLI 直跑（不走服务，调试用）
+
+```bash
 python scripts/run_pipeline.py --prompt "一只猫在窗台上看雨" --duration 6 --out work/result.json
-
-# I2VA（首帧生视频）
-python scripts/run_pipeline.py --prompt "..." \
-    --image ./first.jpg --image-role first_frame --duration 8
-
-# Ref2VA（全参考）
-python scripts/run_pipeline.py --prompt "..." \
-    --video ./ref.mp4 --video-role reference_video \
-    --audio ./voice.wav --audio-role reference_audio --duration 5
-
-# 官方 content JSON 输入（与官方 API 请求格式一致）
-python scripts/run_pipeline.py --content work/input.json
-
-# 兼容官方异步接口的服务
-uvicorn server.server:app --host 0.0.0.0 --port 8080
-#   POST /v2/h3_context_ir  → {"task_id": "..."}
-#   GET  /v2/query/video_generation/{task_id} → .task.content.prompt
-
-# 收集官方示例输入（GitHub 仓库脚本中的公开素材 URL）
-python scripts/collect_official_samples.py --out examples
-
-# 评估：官方 vs 自建输出对比
-python -m evaluation.compare --ours work/result.json --official official_result.json
-
-# 回归测试
-python scripts/smoke_test.py
+# 输出完整 PipelineContext（含各步骤中间结果 + final_prompt）到 work/result.json
 ```
 
 ## 项目结构

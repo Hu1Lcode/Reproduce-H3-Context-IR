@@ -46,7 +46,7 @@ LOG_FILE="$WORK_DIR/server.log"
 # 读取配置（config/config.yaml → 环境变量覆盖）
 # -----------------------------------------------------------------------------
 HOST="0.0.0.0"
-PORT="8888"
+PORT="8080"
 if [ -f "$PROJECT_ROOT/config/config.yaml" ]; then
   read -r YAML_HOST YAML_PORT < <(
     python3 -c "

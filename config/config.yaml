@@ -73,4 +73,4 @@ runtime:
   scene_detector: "auto"      # auto / pyscenedetect / frame_diff
   enable_cache: true          # 中间结果磁盘缓存
   server_host: "0.0.0.0"
-  server_port: 8080
+  server_port: 8888

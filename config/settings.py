@@ -127,7 +127,7 @@ class Settings:
 
     # --- 服务 ---
     server_host: str = "0.0.0.0"
-    server_port: int = 8080
+    server_port: int = 8888
     task_store_dir: Path = PROJECT_ROOT / "work" / "tasks"
 
     # --- 缓存 ---
