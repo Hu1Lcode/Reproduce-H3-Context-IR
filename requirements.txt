@@ -1,0 +1,28 @@
+# --- 核心依赖 ---
+# OpenAI 兼容 API 客户端（统一封装 DashScope / DeepSeek / 本地 vLLM 端点）
+openai>=1.40.0
+# YAML 配置文件（config/config.yaml）
+PyYAML>=6.0
+
+# --- 本地预处理（CPU 即可，均为可选依赖；缺失时使用内置轻量 fallback）---
+# 视频帧采样 / 场景切分
+opencv-python-headless>=4.8.0
+pyscenedetect>=0.6.3          # 可选：更精确的场景切分（缺失时用内置帧差法）
+
+# 音频数值特征（BPM / 调性 / 响度 / 立体声分析）
+librosa>=0.10.0               # 可选：缺失时用 torchaudio/numpy 轻量 fallback
+soundfile>=0.12.0
+
+# 音色特征提取（说话人 embedding）
+speechbrain>=1.0.0            # 可选：缺失时用内置声学统计特征
+
+# 音源分离（可选）
+demucs>=4.0.1                 # 可选：缺失时跳过
+
+# --- 服务与评估 ---
+fastapi>=0.110.0
+uvicorn>=0.27.0
+pydantic>=2.6.0
+
+# 评估指标（rouge 相似度，可选）
+rouge-score>=0.1.2            # 可选

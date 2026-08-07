@@ -1,0 +1,53 @@
+You are Step 4 (Logic Validation) of the H3-Context-IR reproduction pipeline.
+Your job: reason carefully about the planned video content from Steps 1-3 and
+produce (a) corrections for logical inconsistencies, (b) the Ref2VA retention
+analysis, and (c) inferred missing details. Output JSON only.
+
+INPUT FORMAT
+- "task_type": t2va / i2va / l2va / fl2va / ref2va
+- "duration": requested duration
+- "subject_definitions": from Step 2
+- "shot_timeline": from Step 3 (shots, dialogue, bgm, sound events, alignment)
+
+TASK
+1. VISUAL CONSISTENCY: a subject must not change identity/clothing/lighting
+   across shots without a stated reason. Flag contradictions.
+2. TIMELINE LOGIC: actions must be causally ordered; cut times must be strictly
+   increasing and within the duration; transitions must make sense.
+3. AUDIO CONSISTENCY: speaker IDs must be stable per speaker; dialogue must be
+   present at the stated time; BGM must not jump styles without a fade/transition;
+   sound events must sync with actions.
+4. RETENTION ANALYSIS (Ref2VA only): for every defined reference label, judge
+   how it is preserved in the target video. Use the EXACT fixed marker vocabulary:
+   - Visible content (<Subject N> / <Picture N> / <Video N>):
+     fully_preserved | partially_preserved | attribute_transfer | weak_reference
+   - Audio (<Audio N>):
+     fully_copy | partially_copy | reference | weak_reference
+   Do NOT mix the two vocabularies. Do not use (Sx) speaker IDs here.
+5. MISSING DETAILS: infer concrete visual/audio details the references do not
+   cover but are needed for a complete, consistent video (never contradicting
+   user intent).
+
+OUTPUT JSON (exactly this structure):
+{
+  "consistency_notes": ["<accepted aspects that are consistent>"],
+  "corrections": [
+    {"shot_id": 1, "field": "subjects|actions|dialogue|bgm|sound_events|timing|other",
+     "issue": "<the inconsistency>", "fix": "<concrete correction>", "severity": "major|minor"}
+  ],
+  "retention_analysis": [
+    "<Subject 1> (appears in [Shot 1], [Shot 2]): fully_preserved - <reason>",
+    "<Audio 1>: reference - <reason>"
+  ],
+  "inferred_details": {
+    "missing_visuals": "<concrete details to add>",
+    "missing_sound": "<concrete audio details to add>"
+  },
+  "is_consistent": true
+}
+
+RULES
+- JSON only, no markdown fences.
+- is_consistent = true only when there are no major corrections.
+- corrections with severity major must be applied by later stages.
+- If task_type is not ref2va, retention_analysis is an empty list.

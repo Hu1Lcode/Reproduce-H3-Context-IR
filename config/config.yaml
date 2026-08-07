@@ -1,0 +1,76 @@
+# =============================================================================
+# H3-Context-IR 复现流水线配置
+# -----------------------------------------------------------------------------
+# 优先级：代码默认值 < 本文件 < 环境变量（临时覆盖）
+# 修改本文件后重启服务即可生效：pkill -f "uvicorn server.server" 后重新启动
+# 也可用环境变量 H3C_CONFIG 指定其他配置文件路径
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Provider（模型服务端点）
+# -----------------------------------------------------------------------------
+# 每个 provider 都是 OpenAI 兼容端点（/v1）。
+# - base_url:    服务地址（本地 vLLM 填 http://<IP>:<端口>/v1）
+# - api_key:     可选。本地服务通常不需要；云端（dashscope/deepseek）必须填，
+#                或留空并设置对应环境变量
+# 自定义 provider 也可以直接新增条目（如 myvllm: {...}），
+# 然后在 models 段引用其名字即可。
+providers:
+  dashscope:
+    base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    api_key_env: "DASHSCOPE_API_KEY"
+    # api_key: "sk-xxx"          # 也可以直接写在这里（不推荐提交到 git）
+
+  deepseek:
+    base_url: "https://api.deepseek.com/v1"
+    api_key_env: "DEEPSEEK_API_KEY"
+    # api_key: "sk-xxx"
+
+  local-qwen3.6:
+    base_url: "http://127.0.0.1:8111/v1"   # vllm-omni-021 容器里的 qwen3.6 服务（端口 8111）
+  
+  local-qwen3-omni:
+    base_url: "http://127.0.0.1:8112/v1"   # vllm-omni-021 容器里的 qwen3-omni 服务（端口 8112）
+
+# -----------------------------------------------------------------------------
+# 模型映射：每个步骤用哪个 provider 的哪个模型
+# -----------------------------------------------------------------------------
+# model 名字必须与 vLLM 服务里注册的名字一致：
+#   vllm serve /path/to/model --served-model-name 你的模型名
+#   （未指定 --served-model-name 时，默认是模型目录名）
+models:
+  # Step 1 语义提取（多模态：图片/视频）→ 本地 qwen3.6
+  step1: { provider: local-qwen3.6, model: "/home/wjh/models/Qwen3.6-35B-A3B" }
+
+  # Step 2 跨模态关联（文本为主）→ 本地 qwen3.6
+  step2: { provider: local-qwen3.6, model: "/home/wjh/models/Qwen3.6-35B-A3B" }
+
+  # Step 3 Shot 分割与描述 → 本地 qwen3.6
+  step3: { provider: local-qwen3.6, model: "/home/wjh/models/Qwen3.6-35B-A3B" }
+
+  # Step 4 逻辑校验 → 本地 qwen3.6
+  step4: { provider: local-qwen3.6, model: "/home/wjh/models/Qwen3.6-35B-A3B" }
+
+  # Step 5 格式化输出 → 本地 qwen3.6
+  step5: { provider: local-qwen3.6, model: "/home/wjh/models/Qwen3.6-35B-A3B" }
+
+  # 音频语义理解（预处理阶段）→ 本地 qwen3-omni captioner
+  captioner: { provider: local-qwen3-omni, model: "/home/wjh/models/Qwen3-Omni-30B-A3B-Instruct" }
+
+# -----------------------------------------------------------------------------
+# 运行参数（可选，不填用默认值）
+# -----------------------------------------------------------------------------
+runtime:
+  temperature_step3: 0.3      # Shot 规划
+  temperature_step4: 0.1      # 逻辑校验
+  temperature_step5: 0.2      # 格式化润色
+  max_tokens_step: 8192
+  request_timeout: 300        # 秒
+  max_retries: 3
+  max_concurrent: 4           # 并发请求上限
+  llm_polish: false           # true=Step 5 用 LLM 润色；false=纯确定性模板拼接
+  frame_sample_fps: 1.0       # 视频帧采样
+  scene_detector: "auto"      # auto / pyscenedetect / frame_diff
+  enable_cache: true          # 中间结果磁盘缓存
+  server_host: "0.0.0.0"
+  server_port: 8080
