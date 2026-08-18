@@ -23,7 +23,7 @@ OUTPUT JSON (exactly this structure):
 {
   "prompt_analysis": {
     "task_params": {"duration": <number|null>, "ratio": "<string|null>", "language": "<string|null>"},
-    "style": "<overall style keywords or null>",
+    "style": "<overall style keywords in English or null>",
     "shots_intent": ["<intended shot/scene sequence, one item per intent>"],
     "dialogue_intent": ["<intended dialogue lines or null>"],
     "music_intent": "<intended music description or null>",
@@ -55,5 +55,9 @@ RULES
 - JSON only, no markdown fences, no commentary before/after.
 - Field names must match exactly.
 - Null fields: use null, do not omit.
+- ALL analysis fields (style, scene, composition, color_style, motion, camera,
+  ambience, music_style, timbre, subjects, shots_intent...) must be written in
+  English; keep the original language only inside transcript and literal
+  dialogue quotes.
 - Subjects: name concrete entities (person/animal/object) with distinguishing
   attributes so later stages can cross-reference them with the prompt text.

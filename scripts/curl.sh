@@ -30,10 +30,10 @@ RESP=$(curl --silent --show-error \
   "content": [
     {
       "type": "text",
-      "text": "Epic space-opera theatrical teaser: a female captain stands alone before a massive observation window as the last fleet gathers and jumps away in a blinding flash, the bridge shaking, leaving her behind."
+      "text": "两个人在海边骑自行车，后面跟着自己的小孩子"
     }
   ],
-  "duration": 10,
+  "duration": 5,
   "ratio": "16:9"
 }')
 echo "$RESP"

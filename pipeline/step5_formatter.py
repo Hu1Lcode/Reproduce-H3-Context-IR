@@ -56,6 +56,43 @@ def _trim(s: str | None) -> str:
     return (s or "").strip()
 
 
+CAMERA_FIXES = [
+    (r"\s*with zero amplitude and zero speed\b", ""),
+    (r"\s*with zero amplitude\b", ""),
+    (r"\s*with zero speed\b", ""),
+    (r"\s*with moderate amplitude\b", ""),
+    (r"\s*with medium amplitude\b", ""),
+    (r"\s*at (a )?(steady|normal) speed\b", ""),
+]
+
+LABEL_RE = re.compile(r"<?(?:Subject|Audio|Picture|Video) \d+>?")
+
+
+def _filter_labels(text: str, task_type: str) -> str:
+    """Base 模式删除 <Subject N> 等标签（仅 Ref2VA 保留），避免泄漏到最终输出。"""
+    if task_type == "ref2va" or not text:
+        return text
+    return re.sub(r"\s*" + LABEL_RE.pattern + r"\s*", " ", text).strip()
+
+
+def _clean_style(style: str) -> str:
+    """删除风格字段中的非英文片段（中文残留），空则回退默认。"""
+    s = re.sub(r"[^\x00-\x7F]+", "", style or "").strip().strip(",").strip()
+    return s
+
+
+def _normalize_camera(camera: str) -> str:
+    """运镜文本规范化：清理非官方振幅/速度词汇（Guide 仅 small/large、slow/fast）。"""
+    c = camera.strip()
+    for pattern, repl in CAMERA_FIXES:
+        c = re.sub(pattern, repl, c)
+    c = re.sub(r"\s{2,}", " ", c).strip()
+    # 静态镜头收尾
+    if re.search(r"static shot\s*\.?$", c, re.IGNORECASE) and not c.rstrip().endswith("."):
+        c += "."
+    return c
+
+
 # ---------------------------------------------------------------------------
 # 确定性渲染：Shot 级
 # ---------------------------------------------------------------------------
@@ -73,7 +110,7 @@ def render_shot(shot: dict[str, Any], task_type: str) -> str:
 
     # 视觉主体（非 ref2va 任务不使用 <Subject N> 等标签，仅保留描述性主体）
     visual: list[str] = []
-    comp = _trim(shot.get("composition"))
+    comp = _filter_labels(_trim(shot.get("composition")), task_type)
     if comp:
         visual.append(comp)
     subjects = shot.get("subjects") or []
@@ -86,12 +123,14 @@ def render_shot(shot: dict[str, Any], task_type: str) -> str:
     if subjects:
         subj_str = ", ".join(str(s) for s in subjects)
         visual.append(f"featuring {subj_str}" if visual else f"featuring {subj_str}")
-    actions = _trim(shot.get("actions"))
+    actions = _filter_labels(_trim(shot.get("actions")), task_type)
     if actions:
         visual.append(actions)
     camera = _trim(shot.get("camera"))
     if camera:
-        visual.append(camera)
+        camera = _normalize_camera(camera)
+        if camera:
+            visual.append(camera)
 
     body = " ".join(visual).strip()
     if body:
@@ -108,29 +147,8 @@ def render_shot(shot: dict[str, Any], task_type: str) -> str:
             f" {prefix} says: <d>[{lang}] {text}</d>."
         )
 
-    # BGM
-    bgm = shot.get("bgm") or {}
-    if bgm.get("active"):
-        style = _trim(bgm.get("style"))
-        fade = bgm.get("fade", "none")
-        fade_txt = {"in": "fading in", "out": "fading out"}.get(fade, "")
-        base = f"Background music" + (f" ({style})" if style else "")
-        parts.append(f" {base} plays during this shot{fade_txt and ' ' + fade_txt}.")
-
-    # 声音事件
-    for ev in shot.get("sound_events") or []:
-        desc = _trim(ev.get("description")) or _trim(ev.get("type"))
-        t = ev.get("time")
-        time_txt = f" at {format_ts_secs(t)}s" if t is not None else ""
-        parts.append(f" A sound event{time_txt}: {desc}.")
-
-    # 过渡
-    trans = _trim(shot.get("transition"))
-    if trans and trans.lower() not in ("cut", "none"):
-        parts.append(f" The shot {trans}.")
-    elif trans and trans.lower() == "cut" and shot_id > 1:
-        parts.append(" The shot cuts.")
-
+    # 转场：Guide 只在多镜头切换处写 "the camera cuts to"（下一镜头开头）；
+    # 单镜头自然结束，无任何后缀。模板一律不渲染转场，避免自创后缀。
     return "".join(parts).strip()
 
 
@@ -160,10 +178,12 @@ def render_multimodal_description(
 
 
 def render_overall_soundscape(ctx: PipelineContext) -> str:
-    """overall_soundscape：环境音 + 物理动作音（1-4 句）。"""
-    # 优先使用 Step 4 推断/补充的缺失声音
-    inferred = ctx.validation.get("inferred_details", {}).get("missing_sound", "")
-    # 优先使用 Step 3 规划中的声音事件（跨镜头汇总）
+    """overall_soundscape：1-4 句连续段落（环境声 + 物理动作声 + 非语言人声）。
+
+    注意：Step 4 的 inferred_details.missing_sound 是给 Step 3 的补充建议
+    （措辞如 "Add ... / Specify ..."），不能直接拼入最终输出；
+    仅在 shot 规划完全没有声音事件时，才取其信息性内容兜底。
+    """
     events: list[str] = []
     for s in ctx.shot_timeline.get("shots", []):
         for ev in s.get("sound_events") or []:
@@ -171,11 +191,16 @@ def render_overall_soundscape(ctx: PipelineContext) -> str:
             if d and d not in events:
                 events.append(d)
     if events:
-        joined = ", ".join(events[:4])
-        text = f"Ambient and physical sounds include {joined}."
-        if inferred:
-            text += f" {inferred}"
-        return text
+        # 自然段落式拼接（避免 "Ambient and physical sounds include ..." 列表式）
+        head = events[0][0].upper() + events[0][1:]
+        if len(events) > 1:
+            mid = "; ".join(events[1:4])
+            return (
+                f"{head} sets the ambient base. In the foreground, {mid} "
+                f"follow as the action unfolds."
+            )
+        return f"{head} fills the scene throughout."
+    inferred = _trim(ctx.validation.get("inferred_details", {}).get("missing_sound"))
     if inferred:
         return inferred
     return "N/A"
@@ -186,12 +211,12 @@ def render_non_diegetic_music(ctx: PipelineContext) -> str:
     styles: list[str] = []
     for s in ctx.shot_timeline.get("shots", []):
         bgm = s.get("bgm") or {}
-        if bgm.get("active"):
-            style = _trim(bgm.get("style"))
-            if style and style not in styles:
-                styles.append(style)
+        # 只要存在风格描述即收集（active 缺失/为 false 时也保留，避免大量 N/A）
+        style = _trim(bgm.get("style"))
+        if style and style not in styles:
+            styles.append(style)
     if styles:
-        return f"Background music: " + "; ".join(styles) + "."
+        return "; ".join(styles) + "."
     return "N/A"
 
 
@@ -223,7 +248,7 @@ def render_base_instruction(task_type: str, ctx: PipelineContext) -> str:
 def render_base_prompt(task_type: str, ctx: PipelineContext) -> str:
     """Base 模式三字段最终 prompt。"""
     style = (
-        ctx.semantic_descriptions.get("prompt_analysis", {}).get("style")
+        _clean_style(ctx.semantic_descriptions.get("prompt_analysis", {}).get("style"))
         or "cinematic live-action"
     )
     instruction = render_base_instruction(task_type, ctx)
@@ -243,7 +268,7 @@ def render_base_prompt(task_type: str, ctx: PipelineContext) -> str:
 def render_ref2va_prompt(ctx: PipelineContext) -> str:
     """Ref2VA 六字段最终 prompt。"""
     style = (
-        ctx.semantic_descriptions.get("prompt_analysis", {}).get("style")
+        _clean_style(ctx.semantic_descriptions.get("prompt_analysis", {}).get("style"))
         or "cinematic live-action"
     )
     detailed = render_multimodal_description(ctx, style)
@@ -308,31 +333,58 @@ class Step5Formatter(StepBase):
         self._client = TextClient(provider, model, self.settings)
 
     def run(self, ctx: PipelineContext) -> PipelineContext:
-        # 1. 确定性渲染
+        # 1. 确定性模板渲染（最终约束 / 兜底，100% 符合官方结构）
         if ctx.task_type == "ref2va":
-            prompt = render_ref2va_prompt(ctx)
+            fallback = render_ref2va_prompt(ctx)
         else:
-            prompt = render_base_prompt(ctx.task_type, ctx)
+            fallback = render_base_prompt(ctx.task_type, ctx)
+        prompt = fallback
 
-        # 2. 可选 LLM 润色（温度 ≤ 0.2）
+        # 2. LLM 按官方指南直接生成最终 prompt（llm_polish=true 时）
         if self.settings.llm_polish:
             template = _load_prompt(f"step5_format_{ctx.task_type}.txt")
+            plan = {
+                "task_type": ctx.task_type,
+                "duration": ctx.duration,
+                "ratio": ctx.ratio,
+                "media_roles": ctx.media_roles,
+                "prompt_analysis": ctx.semantic_descriptions.get("prompt_analysis", {}),
+                "media_analysis": ctx.semantic_descriptions.get("media_analysis", {}),
+                "subject_definitions": ctx.subject_definitions,
+                "cross_modal_mapping": ctx.cross_modal_mapping,
+                "shot_timeline": ctx.shot_timeline,
+                "validation": ctx.validation,
+            }
             user = (
-                "Here is a draft final prompt generated by deterministic template "
-                "assembly. Rewrite it into natural official-style English following "
-                "the rules above, preserving all structure, labels, timestamps, and "
-                "verbatim dialogue. Output only the final prompt text.\n\n"
-                f"task_type: {ctx.task_type}\n"
-                f"duration: {ctx.duration}\n\n"
-                f"DRAFT:\n{prompt}"
+                "Below is the structured plan for the target video (JSON). "
+                "Write the FINAL video-generation prompt from this plan, "
+                "following the official guide rules above. "
+                "Output only the final prompt text, with no preamble or explanation.\n\n"
+                "STRUCTURED PLAN (JSON):\n"
+                f"{json.dumps(plan, ensure_ascii=False, indent=1)}"
             )
-            polished = self._client.chat_text(
-                template, user, temperature=self.settings.temperature_step5
-            )
-            if polished.strip():
-                prompt = polished.strip()
+            try:
+                generated = self._client.chat_text(
+                    template,
+                    user,
+                    temperature=self.settings.temperature_step5,
+                    max_tokens=self.settings.max_tokens_step,
+                )
+                if generated.strip():
+                    prompt = generated.strip()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Step 5 LLM 生成失败，使用确定性模板兜底: %s", exc)
 
-        # 3. 校验 + 自动修复兜底
+            # 3. 模板最终约束：LLM 输出不合规（缺字段/顺序错/时间戳非法/列表音效等）→ 回退模板
+            report = validate_prompt(prompt, ctx.task_type, ctx.duration)
+            if not report.ok:
+                logger.warning(
+                    "Step 5 LLM 输出不合规（%s），回退确定性模板",
+                    report.summary()["issues"],
+                )
+                prompt = fallback
+
+        # 4. 校验 + 自动修复兜底
         prompt = auto_fix(prompt, ctx.task_type, ctx.duration)
         report = validate_prompt(prompt, ctx.task_type, ctx.duration)
         ctx.final_prompt = prompt

@@ -231,7 +231,9 @@ def _apply_env(s: Settings) -> None:
     s.step4_model = _pick("H3C_STEP4_MODEL", s.step4_model)
     s.step5_model = _pick("H3C_STEP5_MODEL", s.step5_model)
     s.audio_captioner_model = _pick("H3C_CAPTIONER_MODEL", s.audio_captioner_model)
-    s.llm_polish = os.environ.get("H3C_LLM_POLISH", "0") in ("1", "true", "True")
+    _polish = os.environ.get("H3C_LLM_POLISH")
+    if _polish is not None:
+        s.llm_polish = _polish in ("1", "true", "True")
     s.enable_cache = os.environ.get("H3C_CACHE", "1") not in ("0", "false", "False")
 
     base = os.environ.get("LOCAL_OPENAI_BASE_URL", "")

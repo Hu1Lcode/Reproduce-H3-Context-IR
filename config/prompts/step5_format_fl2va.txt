@@ -35,13 +35,59 @@ HARD RULES (from the official guide)
    unless the user explicitly asked for multiple shots. The final [Shot N] must
    land exactly on Picture 2 at the end of the video.
 3. All sections in English; dialogue and visible text keep original language.
-4. [Shot N] At MM:SS.mmm strictly increasing, within duration; [Shot 1] no timestamp.
-5. Camera motion as natural English (type + amplitude + speed), fixed vocabulary.
+4. [Shot N] At MM:SS.mmm strictly increasing, within duration; [Shot 1] no
+   timestamp. A cut between shots is expressed at the START of the next shot:
+   "the camera cuts to ...". A single-shot video ends naturally, with NO
+   transition suffix of any kind.
+5. Camera motion must read as natural English action inside the sentence (e.g.
+   "The camera pushes in on the cyclist as she opens the umbrella"), NOT as a
+   tag stacked at the end. Fixed vocabulary: Zoom In/Out, Push In/Pull Out, Pan
+   Left/Right, Truck Left/Right, Tilt Up/Down, Pedestal Up/Down, Arc Shot,
+   Tracking Shot, Static Shot, Shake Slightly/Strongly, POV, Roll
+   Clockwise/Counterclockwise. Amplitude ONLY "with small amplitude" / "with
+   large amplitude" (moderate/medium OMITTED). Speed ONLY "at slow speed" /
+   "at fast speed" (normal/steady OMITTED). Static shots: "Static Shot" or
+   "The camera holds a static shot" — NEVER "with zero amplitude and zero
+   speed". Shot-size/angle phrases belong in the opening composition sentence.
 6. Speakers stable IDs; dialogue verbatim in <d>[lang] ...</d>; voiceover phrase +
    lips closed; <scenetrans>/<cutoff> as needed.
 7. On-screen text in English double quotes, verbatim.
-8. overall_soundscape: 1-4 sentences; "N/A" only for complete silence.
-9. non_diegetic_music: 1-3 sentences, no mood words; "N/A" when absent.
-10. Do not use <Subject N>/<Audio N> labels in FL2VA. You may add consistent details.
+8. overall_soundscape: 1-4 English sentences in ONE continuous paragraph that
+   SUMMARIZES ambient, physical action, and non-verbal human sounds; write
+   flowing prose, NOT a comma-separated list; NEVER start with 'Ambient and
+   physical sounds include ...' and NEVER attach timestamps. Dialogue, singing
+   and diegetic music already appear in the multimodal description and must NOT
+   be repeated. "N/A" only for complete silence.
+9. non_diegetic_music: 1-3 sentences, instrumentation/speed/rhythm/dynamics,
+   no mood words. BY DEFAULT most videos carry non-diegetic background music;
+   "N/A" ONLY when the video genuinely has none (e.g. the user explicitly
+   requests silence or ambient-only audio). Diegetic music belongs in the
+   multimodal description, never here.
+10. Do not use <Subject N> / <Audio N> / <Video N> labels in FL2VA. Only
+    'Picture 1' / 'Picture 2' may appear in the fixed instruction line (without
+    angle brackets). NEVER start a sentence with a label such as '<Subject 1>'.
+    Refer to subjects with natural language descriptions instead. You may add
+    consistent details.
+11. NEVER use list-style sound entries like 'A sound event at 0.80s: ...' or
+    'Sound event 1: ...'. Sound must be woven naturally into the shot description
+    sentences. Do not repeat the same sounds as a list in overall_soundscape —
+    that section only summarizes. Sounds occur at the moments the actions happen;
+    do not stack them all at 0.00s.
+12. Transitions: ordinary cuts written naturally at the start of the next shot
+    ("the camera cuts to"). Fade / cross-dissolve / wipe only when the user
+    EXPLICITLY requests them. NEVER append any suffix after a shot's last
+    sentence: no 'The shot fade.', 'The shot fade_to_black', 'The shot
+    fade_out', 'The shot end', 'The shot hold', 'The shot n/a', or any other
+    trailing shot-status fragment. A shot must end on a complete natural
+    sentence.
+13. Output must be entirely in English, except dialogue/lyrics inside <d> and
+    visible scene text in double quotes. NEVER mix in Chinese or other languages;
+    do NOT carry over any non-English fragment from the input prompt.
+14. BGM belongs ONLY in the non_diegetic_music section. Do NOT write
+    'Background music (...) plays during this shot' or any music description inside
+    integrated_multimodal_description.
+15. Do not end the description with any closing tag, status word, or stray
+    punctuation fragment. The last sentence must be a complete, natural English
+    sentence.
 
 Now produce the final prompt text only.

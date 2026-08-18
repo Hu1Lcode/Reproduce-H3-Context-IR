@@ -57,9 +57,13 @@ HARD RULES (from ref-en.txt)
    1-2 sentences BEFORE [Shot 1] (unlike base modes). For each shot: composition,
    subject appearance/position, environment/lighting, actions/state changes,
    camera movement, current sound, and the points where referenced content
-   appears. Insert labels at first appearance and where their roles apply
-   (e.g. "the shot begins from <Picture 1>", "<Subject 2> (S1) turns toward the
-   woman and says, <d>[English] ...</d>").
+   appears. Camera movement must read as natural English action inside the
+   sentence (e.g. "the camera pushes in on the subject"), NOT as a trailing tag;
+   amplitude ONLY small/large, speed ONLY slow/fast (others omitted); static
+   shots: "Static Shot" or "The camera holds a static shot", NEVER "zero
+   amplitude and zero speed". Insert labels at first appearance and where their
+   roles apply (e.g. "the shot begins from <Picture 1>", "<Subject 2> (S1)
+   turns toward the woman and says, <d>[English] ...</d>").
 5. Speaker IDs: (S1)(S2)... assigned once, in the order of actual vocal events
    in the target video; reuse across shots. <Subject N> (Sx) when the subject
    speaks; a stable voice description + (Sx) when the speaker is not a defined
@@ -68,7 +72,13 @@ HARD RULES (from ref-en.txt)
    unintelligible spans; standardize punctuation (no repeated tildes/emoji/
    bullets). If only timbre/rhythm/emotion is referenced, do NOT carry over the
    original dialogue text.
-6. overall_soundscape / non_diegetic_music follow the base guide rules; when
+6. overall_soundscape / non_diegetic_music follow the base guide rules: write
+   overall_soundscape as 1-4 English sentences in ONE continuous paragraph that
+   SUMMARIZES ambient, physical action, and non-verbal human sounds — flowing
+   prose, NOT a comma-separated list; NEVER start with 'Ambient and physical
+   sounds include ...' and NEVER attach timestamps. non_diegetic_music: 1-3
+   sentences (instrumentation/tempo/rhythm/dynamics, no mood words); BY DEFAULT
+   most videos carry one, "N/A" ONLY when there genuinely is none. When
    reference audio is copied/referenced, state the relationship in the matching
    section ("The copied ambience layer from <Audio 1> continues throughout the
    target video." / "<Audio 2> is directly reused as the complete audience-only
@@ -77,5 +87,16 @@ HARD RULES (from ref-en.txt)
    text. Do not reduce the description to a plot summary or a list of reference
    relationships. Do not treat newly added actions/backgrounds/plot as losses
    of reference fidelity.
+8. NEVER use list-style sound entries like 'A sound event at 0.80s: ...' in
+   detailed_description — sound must be woven naturally into the shot sentences.
+   Do not repeat the same sounds as a list in overall_soundscape (that section
+   only summarizes); dialogue/singing/diegetic music must NOT be repeated there.
+9. Transitions: ordinary cuts written naturally at the start of the next shot
+   ("the camera cuts to"). Fade / cross-dissolve / wipe only when the user
+   EXPLICITLY requests them. NEVER append any suffix after a shot's last
+   sentence: no 'The shot fade.', 'The shot fade_to_black', 'The shot
+   fade_out', 'The shot end', 'The shot hold', 'The shot n/a', or any other
+   trailing shot-status fragment. A shot must end on a complete natural
+   sentence.
 
 Now produce the final prompt text only.

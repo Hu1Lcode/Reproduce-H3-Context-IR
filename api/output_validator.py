@@ -107,6 +107,31 @@ def _parse_time(m: str, s: str, ms: str) -> float:
     return int(m) * 60 + int(s) + int(ms) / 1000.0
 
 
+_FIELD_NAMES = (
+    "integrated_multimodal_description",
+    "overall_soundscape",
+    "non_diegetic_music",
+    "subject_definitions",
+    "summary",
+    "retention_analysis",
+    "detailed_description",
+)
+
+
+def _field_block(lines: list[str], name: str) -> str:
+    """取字段名到下一字段之间的内容块。"""
+    idx = next((i for i, l in enumerate(lines) if l.strip().startswith(name + ":")), None)
+    if idx is None:
+        return ""
+    nxt = len(lines)
+    for j in range(idx + 1, len(lines)):
+        ls = lines[j].strip()
+        if ls.startswith(tuple(f + ":" for f in _FIELD_NAMES)):
+            nxt = j
+            break
+    return "\n".join(lines[idx:nxt])
+
+
 def validate_prompt(prompt: str, task_type: str, duration: float | None = None) -> ValidationReport:
     """校验最终 prompt 是否符合官方格式。"""
     report = ValidationReport()
@@ -213,10 +238,74 @@ def validate_prompt(prompt: str, task_type: str, duration: float | None = None) 
         for sid in m.group(0).strip("()").split(","):
             report.speaker_ids.add(sid.strip())
 
-    # --- 7. 英文双引号画面内文字（仅提示，不做硬性报错）---
+    # --- 7. 声音格式（Base 模式硬规则，Guide 4.6）---
+    if task_type != "ref2va":
+        # Guide 禁止的列表式声音条目（自创格式，非官方）
+        if re.search(r"\b[Aa] sound event\s*(at\s*[\d.]+s?)?:?", prompt):
+            report.add(
+                "error",
+                "sound_format",
+                "出现列表式声音条目 'A sound event at ...:'（Guide 禁止，声音应自然融入描述）",
+            )
+        if "Ambient and physical sounds include" in prompt:
+            report.add(
+                "error",
+                "sound_format",
+                "overall_soundscape 是列表式 'include ...'（Guide 要求 1-4 句连续段落）",
+            )
+        # Base 模式禁止 <Subject N> / <Audio N> / <Video N> 标签
+        if re.search(r"<(?:Subject|Audio|Video) \d+>", prompt):
+            report.add(
+                "error",
+                "labels",
+                "Base 模式出现 <Subject N>/<Audio N>/<Video N> 标签（仅 Ref2VA 使用）",
+            )
+
+    # --- 8. 自创转场后缀（Guide 禁止：单镜头自然结束，无任何后缀）---
+    for m in re.finditer(
+        r"\bThe shot (?:fade\.?|fade_to_black|fade_out|end|hold|n\.?a\.?|wipe|cuts|transitions)\b",
+        prompt,
+        re.IGNORECASE,
+    ):
+        report.add(
+            "error",
+            "transition",
+            f"自创转场后缀 '{m.group(0)}'（Guide 禁止；单镜头自然结束，多镜头在下一镜头开头写 the camera cuts to）",
+        )
+
+    # --- 9. BGM 位置（Guide 4.7：非叙事音乐只属于 non_diegetic_music）---
+    for fname in ("integrated_multimodal_description", "detailed_description"):
+        block = _field_block(lines, fname)
+        if re.search(r"Background music", block, re.IGNORECASE):
+            report.add(
+                "error",
+                "bgm",
+                f"{fname} 中出现 'Background music'（非叙事音乐只属于 non_diegetic_music 字段）",
+            )
+
+    # --- 10. 英文双引号画面内文字（仅提示，不做硬性报错）---
     # （跳过：中文引号内文字无法可靠判定）
 
-    # --- 8. 语言规则检查（所有 section 应为英文，<d> 内保留原文——难以自动判定，跳过）---
+    # --- 11. 语言规则：描述应为英文（仅对话/歌词/屏幕文字可保留原文）---
+    cjk_re = re.compile(r"[\u4e00-\u9fff\u3400-\u4dbf]")
+    for fname in (
+        "integrated_multimodal_description",
+        "detailed_description",
+        "overall_soundscape",
+        "non_diegetic_music",
+    ):
+        block = _field_block(lines, fname)
+        if not block:
+            continue
+        # 剥离 <d>...</d> 对话/歌词与双引号内屏幕文字
+        stripped = re.sub(r"<d>.*?</d>", "", block, flags=re.DOTALL)
+        stripped = re.sub(r"\"[^\"]*\"", "", stripped)
+        if cjk_re.search(stripped):
+            report.add(
+                "error",
+                "language",
+                f"{fname} 含非英文文本（仅对话/歌词/屏幕文字可保留原文）",
+            )
 
     return report
 
